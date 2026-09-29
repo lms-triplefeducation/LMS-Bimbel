@@ -1,314 +1,116 @@
-// ======================================================
-// LMS BIMBEL - CONFIG & HELPER
-// ======================================================
+document.addEventListener("DOMContentLoaded", function () {
+  const loginForm = document.getElementById("login-form");
+  const loginPage = document.getElementById("login-page");
+  const dashboardPage = document.getElementById("dashboard-page");
+  const loginAlert = document.getElementById("login-alert");
+  const btnLogin = document.getElementById("btn-login");
+  const btnLogout = document.getElementById("btn-logout");
 
-const API_URL = window.LMS_CONFIG?.API_URL || '';
+  // Cek apakah ada sesi tersimpan
+  checkSession();
 
-const $ = id => document.getElementById(id);
+  // Handle Event Submit Login
+  if (loginForm) {
+    loginForm.addEventListener("submit", async function (e) {
+      // PENTING: Cegah reload otomatis halaman
+      e.preventDefault();
 
-let state = {
-    token: localStorage.getItem('LMS_TOKEN') || '',
-    user: null
-};
+      hideAlert();
 
-function toast(message) {
-    const el = $('toast');
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const role = document.getElementById("role-select").value;
 
-    if (!el) {
-        alert(message);
+      if (!username || !password) {
+        showAlert("Username dan Password tidak boleh kosong.");
         return;
-    }
+      }
 
-    el.textContent = message || '';
-    el.classList.add('show');
+      // Tampilkan status loading
+      btnLogin.disabled = true;
+      btnLogin.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Memproses...`;
 
-    clearTimeout(window.__toastTimer);
+      try {
+        // Jika API URL belum diatur, gunakan mode demo/lokal
+        if (!CONFIG.API_URL || CONFIG.API_URL.includes("GANTI_DENGAN")) {
+          console.warn("API_URL belum diatur. Menggunakan mode login lokal (Demo).");
+          setTimeout(() => {
+            const userData = { username, role, name: username };
+            saveSession(userData);
+            showDashboard(userData);
+            btnLogin.disabled = false;
+            btnLogin.innerHTML = `<i class="bi bi-box-arrow-in-right me-1"></i> Masuk`;
+          }, 800);
+          return;
+        }
 
-    window.__toastTimer = setTimeout(() => {
-        el.classList.remove('show');
-    }, 3500);
-}
-
-function esc(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-function money(value) {
-    return new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        maximumFractionDigits: 0
-    }).format(Number(value || 0));
-}
-
-
-// ======================================================
-// API
-// ======================================================
-
-async function api(action, data = {}) {
-
-    if (!API_URL) {
-        throw new Error(
-            'API URL belum tersedia. Periksa file config.js.'
-        );
-    }
-
-    const payload = {
-        action: action,
-        ...data
-    };
-
-    if (state.token) {
-        payload.token = state.token;
-    }
-
-    let response;
-
-    try {
-
-        response = await fetch(API_URL, {
-            method: 'POST',
-
-            headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
-            },
-
-            body: JSON.stringify(payload)
+        // Request ke Backend Apps Script
+        const response = await fetch(`${CONFIG.API_URL}?action=login`, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ username, password, role })
         });
 
-    } catch (error) {
+        const result = await response.json();
 
-        throw new Error(
-            'Tidak dapat terhubung ke server LMS. Periksa koneksi internet dan URL Apps Script.'
-        );
-
-    }
-
-    const raw = await response.text();
-
-    let result;
-
-    try {
-
-        result = JSON.parse(raw);
-
-    } catch (error) {
-
-        throw new Error(
-            'Server LMS mengirim respons yang tidak valid: ' +
-            raw.substring(0, 300)
-        );
-
-    }
-
-    if (!response.ok) {
-
-        throw new Error(
-            result.message ||
-            `Server error ${response.status}`
-        );
-
-    }
-
-    if (result.ok === false) {
-
-        throw new Error(
-            result.message ||
-            'Permintaan ke server gagal.'
-        );
-
-    }
-
-    return result;
-}
-
-
-// ======================================================
-// LOGIN
-// ======================================================
-
-$('loginForm').onsubmit = async function(e) {
-
-    e.preventDefault();
-
-    try {
-
-        const username = $('loginUser').value.trim();
-        const password = $('loginPass').value;
-
-        if (!username) {
-            toast('Username belum diisi.');
-            return;
+        if (result.success || result.status === "success") {
+          const userData = result.data || { username, role, name: username };
+          saveSession(userData);
+          showDashboard(userData);
+        } else {
+          showAlert(result.message || "Username atau Password salah.");
         }
+      } catch (error) {
+        console.error("Login Error:", error);
+        showAlert("Gagal terhubung ke server Google Apps Script. Periksa konfigurasi API_URL.");
+      } finally {
+        btnLogin.disabled = false;
+        btnLogin.innerHTML = `<i class="bi bi-box-arrow-in-right me-1"></i> Masuk`;
+      }
+    });
+  }
 
-        if (!password) {
-            toast('Password belum diisi.');
-            return;
-        }
+  // Handle Logout
+  if (btnLogout) {
+    btnLogout.addEventListener("click", function () {
+      localStorage.removeItem("lms_user_session");
+      loginPage.classList.remove("hidden");
+      dashboardPage.classList.add("hidden");
+      document.getElementById("username").value = "";
+      document.getElementById("password").value = "";
+    });
+  }
 
-        toast('Sedang login...');
+  function saveSession(data) {
+    localStorage.setItem("lms_user_session", JSON.stringify(data));
+  }
 
-        const r = await api('login', {
-            username: username,
-            password: password
-        });
-
-        console.log('LOGIN RESPONSE:', r);
-
-        if (!r.token || !r.user) {
-            throw new Error(
-                'Login berhasil tetapi data akun tidak lengkap.'
-            );
-        }
-
-        state.token = r.token;
-        state.user = r.user;
-
-        localStorage.setItem(
-            'LMS_TOKEN',
-            state.token
-        );
-
-        showApp();
-
-    } catch (error) {
-
-        console.error('LOGIN ERROR:', error);
-
-        toast(
-            error.message ||
-            'Login gagal.'
-        );
-
+  function checkSession() {
+    const session = localStorage.getItem("lms_user_session");
+    if (session) {
+      const userData = JSON.parse(session);
+      showDashboard(userData);
     }
+  }
 
-};
+  function showDashboard(userData) {
+    loginPage.classList.add("hidden");
+    dashboardPage.classList.remove("hidden");
 
+    document.getElementById("user-welcome").innerText = `Selamat Datang, ${userData.name || userData.username}!`;
+    document.getElementById("user-role-badge").innerText = `Peran / Role: ${userData.role || 'Siswa'}`;
+  }
 
-// ======================================================
-// LOGOUT
-// ======================================================
-
-function logout(){
-
-    state = {
-        token: '',
-        user: null
-    };
-
-    localStorage.removeItem('LMS_TOKEN');
-
-    $('appView').classList.add('hidden');
-
-    $('loginView').classList.remove('hidden');
-
-    $('logoutBtn').classList.add('hidden');
-
-}
-function showApp(){if(!state.user){$('loginView').classList.remove('hidden');return}$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');setupShell();setPage('dashboard')};function setupShell(){$('welcomeName').textContent='Halo, '+state.user.name;$('welcomeRole').textContent='Peran: '+state.user.role;$('studentBadge').textContent=state.user.student_code||state.user.username;document.querySelectorAll('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));document.querySelectorAll('.teacher-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='guru'));document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>setPage(x.dataset.page))}function setPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));$(p+'Page').classList.remove('hidden');document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.page===p));({dashboard:loadDashboard,meetings:loadMeetings,quiz:loadQuizzes,tryout:loadTryouts,billing:loadBilling,report:loadReport,teacher:loadTeacher,admin:loadAdmin}[p]||loadDashboard)()}
-async function loadDashboard(){try{const r=await api('dashboard');let cards=[];if(state.user.role==='admin')cards=[['👨‍🎓','Siswa',r.stats.students],['👨‍🏫','Guru',r.stats.teachers],['🏫','Kelas',r.stats.classes],['📅','Pertemuan',r.stats.meetings],['🎯','Tryout',r.stats.tryouts],['💰','Tagihan',money(r.stats.unpaid)]];else if(state.user.role==='guru')cards=[['🏫','Kelas saya',r.stats.classes],['👨‍🎓','Siswa',r.stats.students],['📅','Pertemuan',r.stats.meetings],['📌','Pertemuan hari ini',r.stats.today_meetings],['✅','Data absensi',r.stats.attendance],['📝','Kuis',r.stats.quizzes]];else cards=[['📅','Pertemuan',r.stats.meetings],['📝','Kuis selesai',r.stats.quiz_done],['🎯','Tryout selesai',r.stats.tryout_done],['✅','Catatan absensi',r.stats.attendance],['💰','Tagihan',money(r.stats.unpaid)]];$('dashboardPage').innerHTML=`<div class="grid cards">${cards.map(x=>`<div class="card stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('')}</div><div class="card"><h2>${state.user.role==='admin'?'Dashboard Admin':state.user.role==='guru'?'Dashboard Guru':'Dashboard Siswa'}</h2><p>${esc(r.message)}</p></div>`}catch(e){toast(e.message)}}
-async function loadMeetings(){try{const r=await api('meetings');$('meetingsPage').innerHTML=`<div class="card"><h2>Pertemuan</h2>${r.items.map(x=>`<div class="item"><b>${esc(x.title)}</b><div>${esc(x.date)} • ${esc(x.subject)}</div><p>${esc(x.description)}</p>${x.material_url?`<a href="${esc(x.material_url)}" target="_blank">Buka materi</a>`:''}</div>`).join('')||'<p>Belum ada pertemuan.</p>'}</div>`}catch(e){toast(e.message)}}
-async function loadQuizzes(){try{const r=await api('quizzes');$('quizPage').innerHTML=`<div class="card"><h2>Kuis</h2>${r.items.map(x=>`<div class="item"><b>${esc(x.title)}</b><p>${esc(x.description||'')} • ${x.duration_minutes||0} menit</p><button class="btn primary" onclick="startQuiz('${x.id}')">Mulai</button></div>`).join('')||'<p>Belum ada kuis.</p>'}</div>`}catch(e){toast(e.message)}}async function startQuiz(id){const r=await api('quiz_detail',{quiz_id:id});assessmentUI('quizPage',r.questions,r.quiz.title,'submit_quiz',id,r.quiz.duration_minutes||0)}
-async function loadTryouts(){try{const r=await api('tryouts');$('tryoutPage').innerHTML=`<div class="card"><h2>Tryout</h2><p class="muted">Tryout memiliki timer dan mendukung pilihan ganda, pilihan ganda kompleks, isian, serta benar/salah.</p>${r.items.map(x=>`<div class="item"><b>${esc(x.title)}</b><p>${esc(x.description||'')}</p><small>${x.question_count} soal • ${x.duration_minutes} menit • ${esc(x.date||'')}</small><br><button class="btn primary" onclick="startTryout('${x.id}')">Mulai Tryout</button></div>`).join('')||'<p>Belum ada tryout.</p>'}</div>`}catch(e){toast(e.message)}}
-let assessmentTimer=null;async function startTryout(id){try{const r=await api('start_tryout',{tryout_id:id});assessmentUI('tryoutPage',r.questions,r.tryout.title,'tryout',id,r.tryout.duration_minutes,r)}catch(e){toast(e.message)}}
-function assessmentUI(page,items,title,action,id,duration,meta={}){let idx=0,ans={};let remaining=meta.attempt?.remaining_seconds??(Number(duration||0)*60);if(action==='tryout'&&meta.attempt)remaining=meta.attempt.remaining_seconds;const attemptId=meta.attempt?.id||'';const allowBack=meta.tryout?.allow_back!==false;clearInterval(assessmentTimer);$(page).innerHTML=`<div class="card" id="assessment"><div class="assessment-head"><div><h2>${esc(title)}</h2><span id="qcounter"></span></div><div class="timer" id="timer">${fmtTime(remaining)}</div></div><div id="questionBox"></div><div class="actions"><button id="prevBtn" class="btn secondary">← Sebelumnya</button><button id="nextBtn" class="btn primary">Lanjut →</button></div><div id="navigator" class="qnav"></div></div>`;function fmtTime(s){s=Math.max(0,Number(s)||0);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}function draw(){const q=items[idx];$('qcounter').textContent=`Soal ${idx+1} dari ${items.length}`;let body='';if(q.type==='multiple_choice'){body=q.options.map(o=>`<label class="answer"><input type="radio" name="answer" value="${esc(o.id)}" ${ans[q.id]===o.id?'checked':''}><span>${esc(o.id)}. ${esc(o.text)}</span></label>`).join('')}else if(q.type==='complex_choice'){const selected=Array.isArray(ans[q.id])?ans[q.id]:String(ans[q.id]||'').split(',').filter(Boolean);body=q.options.map(o=>`<label class="answer"><input type="checkbox" name="answer" value="${esc(o.id)}" ${selected.includes(o.id)?'checked':''}><span>${esc(o.id)}. ${esc(o.text)}</span></label>`).join('')}else if(q.type==='true_false'){body=['true','false'].map(v=>`<label class="answer"><input type="radio" name="answer" value="${v}" ${String(ans[q.id]).toLowerCase()===v?'checked':''}><span>${v==='true'?'Benar':'Salah'}</span></label>`).join('')}else{body=`<input class="short-answer" id="shortAnswer" value="${esc(ans[q.id]||'')}" placeholder="Ketik jawaban Anda...">`}$('questionBox').innerHTML=`<div class="question"><div class="type-badge">${typeLabel(q.type)} • ${q.points} poin</div><h3>${esc(q.question)}</h3>${q.image_url?`<img class="question-image" src="${esc(q.image_url)}" alt="Gambar soal">`:''}<div>${body}</div></div>`;$('prevBtn').disabled=idx===0||!allowBack;$('nextBtn').textContent=idx===items.length-1?'Kumpulkan':'Lanjut →';document.querySelectorAll('#navigator button').forEach((b,i)=>b.classList.toggle('current',i===idx))}function typeLabel(t){return({multiple_choice:'Pilihan Ganda',complex_choice:'Pilihan Ganda Kompleks',short_answer:'Isian',true_false:'Benar / Salah'})[t]||t}function save(){const q=items[idx];if(q.type==='complex_choice')ans[q.id]=[...document.querySelectorAll('input[name=answer]:checked')].map(x=>x.value);else if(q.type==='short_answer')ans[q.id]=$('shortAnswer')?.value||'';else ans[q.id]=document.querySelector('input[name=answer]:checked')?.value||''}async function submit(){save();try{let r;if(action==='tryout')r=await api('submit_tryout',{tryout_id:id,attempt_id:attemptId,answers:ans});else r=await api('submit_quiz',{quiz_id:id,answers:ans});clearInterval(assessmentTimer);$('assessment').innerHTML=`<div class="result"><h2>🎉 Selesai</h2><div class="big-score">${r.score}</div><p>Benar ${r.correct} • Salah ${r.wrong??(r.total-r.correct)} • Kosong ${r.blank??0} • Total ${r.total}</p></div>`}catch(e){toast(e.message)}}$('prevBtn').onclick=()=>{save();if(idx>0){idx--;draw()}};$('nextBtn').onclick=()=>{save();if(idx<items.length-1){idx++;draw()}else submit()};$('navigator').innerHTML=items.map((_,i)=>`<button type="button" onclick="window.__goto(${i})">${i+1}</button>`).join('');window.__goto=i=>{save();idx=i;draw()};draw();if(action==='tryout'){assessmentTimer=setInterval(()=>{remaining--;$('timer').textContent=fmtTime(remaining);if(remaining<=0){clearInterval(assessmentTimer);submit()}},1000)}}
-async function loadBilling(){try{const r=await api('billing');$('billingPage').innerHTML=`<div class="card"><h2>Tagihan</h2><div class="table-wrap"><table><tr><th>Tagihan</th><th>Jumlah</th><th>Jatuh Tempo</th><th>Status</th></tr>${r.items.map(x=>`<tr><td>${esc(x.title)}</td><td>${money(x.amount)}</td><td>${esc(x.due_date)}</td><td>${esc(x.status)}</td></tr>`).join('')}</table></div></div>`}catch(e){toast(e.message)}}async function loadReport(){try{const r=await api('report');$('reportPage').innerHTML=`<div class="card"><h2>Laporan</h2><div class="grid cards">${r.summary.map(x=>`<div class="stat"><b>${x.value}</b><span>${esc(x.label)}</span></div>`).join('')}</div><button class="btn primary" onclick="generateReport()">Buat PDF Laporan</button></div>`}catch(e){toast(e.message)}}async function generateReport(){try{const r=await api('generate_report');window.open(r.url,'_blank');toast('PDF berhasil dibuat')}catch(e){toast(e.message)}}
-
-async function loadTeacher(){if(state.user.role!=='guru')return;try{const r=await api('teacher_dashboard');const m=await api('teacher_meetings');$('teacherPage').innerHTML=`<div class="grid cards">${[['🏫','Kelas',r.stats.classes],['👨‍🎓','Siswa',r.stats.students],['📅','Pertemuan',r.stats.meetings],['📌','Hari ini',r.stats.today_meetings]].map(x=>`<div class="card stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('')}</div><div class="card"><div class="row"><div><h2>Absensi per Pertemuan</h2><p class="muted">Pilih pertemuan untuk mengisi atau memperbarui kehadiran siswa.</p></div></div><div class="list">${m.items.map(x=>`<div class="item"><div class="row"><div><b>${esc(x.title)}</b><div>${esc(x.date)} • ${esc(x.class_name)} • ${esc(x.subject)}</div><small>${esc(x.start_time||'')} ${x.end_time?'– '+esc(x.end_time):''}</small></div><button class="btn primary" onclick="openTeacherAttendance('${x.id}')">✅ Absensi</button></div></div>`).join('')||'<p>Belum ada pertemuan yang ditugaskan.</p>'}</div></div>`}catch(e){toast(e.message)}}
-async function openTeacherAttendance(meetingId){try{const r=await api('teacher_attendance',{meeting_id:meetingId});const rows=r.items;$('teacherPage').insertAdjacentHTML('beforeend',`<div class="modal-back" id="attendanceModal"><div class="modal modal-xl"><div class="row"><div><h2>Absensi Siswa</h2><p class="muted">${esc(r.meeting.title)} • ${esc(r.meeting.date)}</p></div><button class="icon-btn" onclick="closeAttendance()">✕</button></div><div class="attendance-tools"><button class="btn secondary" onclick="setAllAttendance('Hadir')">Semua Hadir</button><button class="btn secondary" onclick="setAllAttendance('Izin')">Semua Izin</button><button class="btn secondary" onclick="setAllAttendance('Sakit')">Semua Sakit</button><button class="btn secondary" onclick="setAllAttendance('Alpa')">Semua Alpa</button></div><div class="table-wrap"><table id="attendanceTable"><tr><th>No</th><th>Siswa</th><th>Status</th><th>Keterangan</th></tr>${rows.map((x,i)=>`<tr data-student="${esc(x.student_id)}"><td>${i+1}</td><td><b>${esc(x.name)}</b><br><small>${esc(x.student_code)}</small></td><td><select class="att-status"><option ${x.status==='Hadir'?'selected':''}>Hadir</option><option ${x.status==='Izin'?'selected':''}>Izin</option><option ${x.status==='Sakit'?'selected':''}>Sakit</option><option ${x.status==='Alpa'?'selected':''}>Alpa</option></select></td><td><input class="att-note" value="${esc(x.note)}" placeholder="Keterangan (opsional)"></td></tr>`).join('')}</table></div><div class="actions" style="margin-top:15px"><button class="btn primary" onclick="saveTeacherAttendance('${meetingId}')">💾 Simpan Absensi</button><button class="btn secondary" onclick="closeAttendance()">Tutup</button></div></div></div>`)}catch(e){toast(e.message)}}
-function setAllAttendance(status){document.querySelectorAll('.att-status').forEach(x=>x.value=status)}
-async function saveTeacherAttendance(meetingId){const items=[...document.querySelectorAll('#attendanceTable tr[data-student]')].map(tr=>({student_id:tr.dataset.student,status:tr.querySelector('.att-status').value,note:tr.querySelector('.att-note').value}));try{const r=await api('teacher_save_attendance',{meeting_id:meetingId,items});toast(`Absensi tersimpan: ${r.saved} siswa`);closeAttendance()}catch(e){toast(e.message)}}
-function closeAttendance(){$('attendanceModal')?.remove()}
-let adminSection='students';const configs={students:{title:'Siswa',sheet:'STUDENTS',cols:['student_code','name','school','grade','parent_name','parent_phone','status'],fields:[['student_code','Kode'],['name','Nama'],['gender','Jenis Kelamin'],['birth_date','Tanggal Lahir'],['school','Sekolah'],['grade','Kelas'],['parent_name','Nama Orang Tua'],['parent_phone','No. WA Orang Tua'],['address','Alamat'],['status','Status']]},teachers:{title:'Guru',sheet:'TEACHERS',cols:['teacher_code','name','email','phone','subject','status'],fields:[['teacher_code','Kode'],['name','Nama'],['email','Email'],['phone','Telepon'],['subject','Mapel'],['status','Status']]},classes:{title:'Kelas',sheet:'CLASSES',cols:['code','name','grade','teacher_id','schedule','status'],fields:[['code','Kode'],['name','Nama'],['grade','Tingkat'],['teacher_id','ID Guru'],['schedule','Jadwal'],['status','Status']]},subjects:{title:'Mapel',sheet:'SUBJECTS',cols:['code','name','status'],fields:[['code','Kode'],['name','Nama'],['status','Status']]},meetings:{title:'Pertemuan',sheet:'MEETINGS',cols:['title','date','start_time','end_time','status'],fields:[['class_id','ID Kelas'],['subject_id','ID Mapel'],['title','Judul'],['date','Tanggal'],['start_time','Mulai'],['end_time','Selesai'],['description','Deskripsi'],['material_url','URL Materi'],['status','Status']]},quizzes:{title:'Kuis',sheet:'QUIZZES',cols:['title','duration_minutes','status'],fields:[['class_id','ID Kelas'],['subject_id','ID Mapel'],['title','Judul'],['description','Deskripsi'],['duration_minutes','Durasi Menit'],['status','Status']]},tryouts:{title:'Tryout',sheet:'TRYOUTS',cols:['title','date','duration_minutes','status','shuffle_questions','shuffle_options','allow_back'],fields:[['class_id','ID Kelas'],['title','Judul'],['description','Deskripsi'],['date','Tanggal'],['duration_minutes','Durasi Menit'],['status','Status'],['shuffle_questions','Acak Soal (true/false)'],['shuffle_options','Acak Opsi (true/false)'],['allow_back','Boleh Kembali (true/false)'],['show_explanation','Tampilkan Pembahasan (true/false)']]},tryout_questions:{title:'Soal Tryout',sheet:'TRYOUT_QUESTIONS',cols:['tryout_id','number','question_type','question','option_a','option_b','option_c','option_d','option_e','correct_answer','correct_answers','points'],fields:[['tryout_id','ID Tryout'],['number','Nomor'],['question_type','Jenis (multiple_choice/complex_choice/short_answer/true_false)'],['question','Pertanyaan'],['image_url','URL Gambar'],['option_a','Pilihan A'],['option_b','Pilihan B'],['option_c','Pilihan C'],['option_d','Pilihan D'],['option_e','Pilihan E'],['correct_answer','Jawaban Benar / Isian / TRUE/FALSE'],['correct_answers','Jawaban PG Kompleks, contoh A,C,D'],['points','Poin'],['explanation','Pembahasan']]},invoices:{title:'Tagihan',sheet:'INVOICES',cols:['student_id','title','amount','due_date','status','payment_method'],fields:[['student_id','ID Siswa'],['title','Tagihan'],['amount','Jumlah'],['due_date','Jatuh Tempo'],['status','Status'],['payment_method','Metode'],['notes','Catatan']]},questions:{title:'Bank Soal Kuis',sheet:'QUESTIONS',cols:['quiz_id','question','correct_option','points'],fields:[['quiz_id','ID Kuis'],['question','Pertanyaan'],['option_a','A'],['option_b','B'],['option_c','C'],['option_d','D'],['correct_option','Jawaban Benar'],['points','Poin']]},users:{title:'Akun Pengguna',sheet:'USERS',cols:['username','name','email','phone','role','status','student_id'],fields:[['username','Username'],['password','Password (kosong = tidak berubah)'],['name','Nama'],['email','Email'],['phone','Telepon'],['role','Role (admin/siswa/guru)'],['status','Status'],['student_id','ID Siswa']]},class_members:{title:'Anggota Kelas',sheet:'CLASS_MEMBERS',cols:['class_id','student_id','status'],fields:[['class_id','ID Kelas'],['student_id','ID Siswa'],['status','Status']]},attendance:{title:'Absensi',sheet:'ATTENDANCE',cols:['meeting_id','student_id','status','note'],fields:[['meeting_id','ID Pertemuan'],['student_id','ID Siswa'],['status','Hadir/Izin/Sakit/Alpa'],['note','Catatan']]},materials:{title:'Materi',sheet:'MATERIALS',cols:['meeting_id','title','description','file_url'],fields:[['meeting_id','ID Pertemuan'],['title','Judul'],['description','Deskripsi'],['file_url','URL File']]},payments:{title:'Pembayaran',sheet:'PAYMENTS',cols:['invoice_id','student_id','amount','paid_at','method','reference','status','proof_url'],fields:[['invoice_id','ID Tagihan'],['student_id','ID Siswa'],['amount','Jumlah'],['paid_at','Tanggal Bayar'],['method','Metode'],['reference','Referensi'],['status','Status'],['proof_url','Bukti URL']]}};
-function renderAdminShell(){$('adminPage').innerHTML=`<div class="card"><h2>⚙️ Panel Administrator</h2><p class="muted">Admin mengelola semua data dari LMS. Google Sheets menjadi database di belakang layar.</p><div class="admin-menu">${[['students','👨‍🎓 Siswa'],['teachers','👨‍🏫 Guru'],['classes','🏫 Kelas'],['subjects','📚 Mapel'],['meetings','📅 Pertemuan'],['quizzes','📝 Kuis'],['tryouts','🎯 Tryout'],['tryout_questions','🧪 Soal Tryout'],['questions','📋 Bank Soal Kuis'],['class_members','👥 Anggota Kelas'],['attendance','✅ Absensi'],['materials','📖 Materi'],['invoices','💰 Tagihan'],['payments','💳 Pembayaran'],['users','🔐 Akun Pengguna']].map(x=>`<button class="${x[0]===adminSection?'active':''}" onclick="adminSection='${x[0]}';renderAdminShell();loadAdminTable('${x[0]}')">${x[1]}</button>`).join('')}</div><div id="adminTable"></div></div>`}async function loadAdmin(){if(state.user.role!=='admin')return;renderAdminShell();loadAdminTable(adminSection)}async function loadAdminTable(sec){try{const c=configs[sec],r=await api('admin_list',{sheet:c.sheet});$('adminTable').innerHTML=`<div class="row" style="margin:15px 0"><h3>${c.title}</h3><button class="btn primary" onclick="openForm('${sec}')">+ Tambah</button></div><div class="table-wrap"><table><tr>${c.cols.map(k=>`<th>${k}</th>`).join('')}<th>Aksi</th></tr>${r.items.map(x=>`<tr>${c.cols.map(k=>`<td>${esc(x[k])}</td>`).join('')}<td><button class="icon-btn" onclick="openForm('${sec}','${x.id}')">✏️</button> <button class="icon-btn" onclick="deleteRow('${c.sheet}','${x.id}')">🗑️</button></td></tr>`).join('')||`<tr><td colspan="${c.cols.length+1}">Belum ada data.</td></tr>`}</table></div>`}catch(e){toast(e.message)}}async function openForm(sec,id=''){const c=configs[sec];let data={};if(id)data=(await api('admin_get',{sheet:c.sheet,id})).item;const fields=c.fields.map(([k,l])=>`<div class="${['description','question','address','explanation'].includes(k)?'full':''}"><label>${l}</label>${k==='question_type'?`<select name="${k}"><option value="multiple_choice">Pilihan Ganda</option><option value="complex_choice">Pilihan Ganda Kompleks</option><option value="short_answer">Isian</option><option value="true_false">Benar/Salah</option></select>`:`<input name="${k}" ${k==='password'?'type="password"':''} value="${esc(data[k]||'')}">`}</div>`).join('');$('adminPage').insertAdjacentHTML('beforeend',`<div class="modal-back" id="modal"><div class="modal"><div class="row"><h2>${id?'Edit':'Tambah'} ${c.title}</h2><button class="icon-btn" onclick="closeModal()">✕</button></div><form id="adminForm"><div class="form-grid">${fields}</div><div class="actions" style="margin-top:15px"><button class="btn primary">Simpan</button><button type="button" class="btn secondary" onclick="closeModal()">Batal</button></div></form></div></div>`);if(data.question_type)$('adminForm').elements.question_type.value=data.question_type;$('adminForm').onsubmit=async e=>{e.preventDefault();const obj={};new FormData(e.target).forEach((v,k)=>obj[k]=v);try{await api('admin_save',{sheet:c.sheet,id,data:obj});toast('Data tersimpan');closeModal();loadAdminTable(sec)}catch(err){toast(err.message)}}}function closeModal(){$('modal')?.remove()}async function deleteRow(sheet,id){if(!confirm('Hapus data ini?'))return;try{await api('admin_delete',{sheet,id});toast('Data dihapus');loadAdminTable(adminSection)}catch(e){toast(e.message)}}
-if(state.token){api('me').then(r=>{state.user=r.user;showApp()}).catch(()=>logout())}
-
-/* ===== V2 ADMIN UI: FLEXIBLE TRYOUT QUESTION ENTRY + EXCEL IMPORT ===== */
-configs.tryout_questions.fields=[['tryout_id','ID Tryout'],['number','Nomor'],['question_type','Jenis Soal'],['question','Pertanyaan'],['image_url','URL Gambar Soal'],['option_a','Pilihan A'],['option_b','Pilihan B'],['option_c','Pilihan C'],['option_d','Pilihan D'],['option_e','Pilihan E'],['correct_answer','Kunci / Jawaban'],['correct_answers','Kunci PG Kompleks (A,C,D)'],['points','Bobot'],['explanation','Pembahasan']];
-configs.tryouts.fields=[['class_id','ID Kelas'],['title','Judul'],['description','Deskripsi'],['date','Tanggal'],['duration_minutes','Durasi Menit'],['question_count','Target Jumlah Soal'],['max_score','Nilai Maksimum'],['kkm','KKM'],['status','Status'],['shuffle_questions','Acak Soal (true/false)'],['shuffle_options','Acak Opsi (true/false)'],['allow_back','Boleh Kembali (true/false)'],['show_explanation','Tampilkan Pembahasan (true/false)'],['timer_enabled','Aktifkan Timer (true/false)'],['random_pool','Gunakan Bank Soal Acak (true/false)']];
-configs.materials.fields=[['meeting_id','ID Pertemuan'],['class_id','ID Kelas'],['subject_id','ID Mapel'],['title','Judul'],['description','Deskripsi'],['material_type','Jenis (teks/pdf/video/link/gabungan)'],['content_html','Isi Materi HTML'],['file_url','URL File'],['video_url','URL Video'],['status','Status']];
-
-function renderAdminShell(){
-  $('adminPage').innerHTML=`<div class="card"><h2>⚙️ Panel Administrator</h2><p class="muted">Semua pengelolaan dilakukan dari LMS. Google Sheets hanya menjadi database di belakang layar.</p><div class="admin-menu">${[['students','👨‍🎓 Siswa'],['teachers','👨‍🏫 Guru'],['classes','🏫 Kelas'],['subjects','📚 Mapel'],['meetings','📅 Pertemuan'],['quizzes','📝 Kuis'],['tryouts','🎯 Tryout'],['tryout_questions','🧪 Bank Soal Tryout'],['questions','📋 Bank Soal Kuis'],['class_members','👥 Anggota Kelas'],['attendance','✅ Absensi'],['materials','📖 Materi'],['invoices','💰 Tagihan'],['payments','💳 Pembayaran'],['users','🔐 Akun Pengguna']].map(x=>`<button class="${x[0]===adminSection?'active':''}" onclick="adminSection='${x[0]}';renderAdminShell();loadAdminTable('${x[0]}')">${x[1]}</button>`).join('')}</div><div id="adminTable"></div></div>`;
-}
-async function loadAdminTable(sec){
-  try{
-    const c=configs[sec],r=await api('admin_list',{sheet:c.sheet});
-    const extra=sec==='tryout_questions'?`<button class="btn secondary" onclick="openExcelImport()">📥 Import Excel</button>`:'';
-    $('adminTable').innerHTML=`<div class="row" style="margin:15px 0"><div><h3>${c.title}</h3><div class="muted small">${sec==='tryout_questions'?'Bisa input manual atau import Excel. Gambar embedded ikut diproses.':''}</div></div><div class="actions">${extra}<button class="btn primary" onclick="openForm('${sec}')">+ Tambah</button></div></div><div class="table-wrap"><table><tr>${c.cols.map(k=>`<th>${k}</th>`).join('')}<th>Aksi</th></tr>${r.items.map(x=>`<tr>${c.cols.map(k=>`<td>${esc(x[k])}</td>`).join('')}<td><button class="icon-btn" onclick="openForm('${sec}','${x.id}')">✏️</button> <button class="icon-btn" onclick="deleteRow('${c.sheet}','${x.id}')">🗑️</button></td></tr>`).join('')||`<tr><td colspan="${c.cols.length+1}">Belum ada data.</td></tr>`}</table></div>`;
-    if(sec==='tryouts' && r.items.length){
-      const cards=await Promise.all(r.items.slice(0,50).map(async t=>{try{return await api('tryout_readiness',{tryout_id:t.id})}catch(_){return null}}));
-      const by={};cards.filter(Boolean).forEach(x=>by[x.tryout_id]=x);
-      document.querySelectorAll('#adminTable table tbody tr').forEach(()=>{});
-      const rows=[...$('adminTable').querySelectorAll('table tr')];rows.slice(1).forEach((tr,i)=>{const t=r.items[i],z=by[t.id];if(z){const td=document.createElement('td');td.innerHTML=`<span class="status-pill ${z.ready?'ready':'pending'}">${z.status}</span> <span class="small">${z.available_questions}/${z.target_questions||'∞'}</span>`;tr.insertBefore(td,tr.lastElementChild);}}); if(rows[0]){const th=document.createElement('th');th.textContent='Kesiapan';rows[0].insertBefore(th,rows[0].lastElementChild)}
+  function showAlert(message) {
+    if (loginAlert) {
+      loginAlert.innerText = message;
+      loginAlert.classList.remove("hidden");
     }
-  }catch(e){toast(e.message)}
-}
+  }
 
-function typeOptions(current){return `<option value="multiple_choice" ${current==='multiple_choice'?'selected':''}>Pilihan Ganda</option><option value="complex_choice" ${current==='complex_choice'?'selected':''}>Pilihan Ganda Kompleks</option><option value="short_answer" ${current==='short_answer'?'selected':''}>Isian</option><option value="true_false" ${current==='true_false'?'selected':''}>Benar / Salah</option>`}
-function questionEditorHtml(data={}){
-  return `<div class="question-editor"><div class="form-grid"><div><label>ID Tryout</label><input name="tryout_id" value="${esc(data.tryout_id||'')}" required></div><div><label>Nomor</label><input name="number" type="number" min="1" value="${esc(data.number||'')}" required></div><div><label>Jenis Soal</label><select name="question_type" id="qType" onchange="refreshQuestionEditor()">${typeOptions(data.question_type||'multiple_choice')}</select></div><div><label>Bobot</label><input name="points" type="number" min="0.1" step="0.1" value="${esc(data.points||1)}"></div><div class="full"><label>Pertanyaan</label><textarea name="question" required>${esc(data.question||'')}</textarea></div><div class="full"><label>URL Gambar Soal <span class="muted small">(opsional)</span></label><input name="image_url" value="${esc(data.image_url||'')}" placeholder="https://..."></div><div id="dynamicAnswers" class="full"></div><div class="full"><label>Pembahasan</label><textarea name="explanation">${esc(data.explanation||'')}</textarea></div></div></div>`;
-}
-function refreshQuestionEditor(){const f=$('adminForm');if(!f)return;const type=f.elements.question_type.value;const d={option_a:f.elements.option_a?.value||'',option_b:f.elements.option_b?.value||'',option_c:f.elements.option_c?.value||'',option_d:f.elements.option_d?.value||'',option_e:f.elements.option_e?.value||'',correct_answer:f.elements.correct_answer?.value||'',correct_answers:f.elements.correct_answers?.value||''};$('dynamicAnswers').innerHTML=answerFields(type,d)}
-function answerFields(type,d={}){
- if(type==='short_answer')return `<div class="form-grid"><div class="full"><label>Jawaban Benar</label><input name="correct_answer" value="${esc(d.correct_answer||'')}" required></div><div class="full"><label>Jawaban Alternatif</label><input name="correct_answers" value="${esc(d.correct_answers||'')}" placeholder="Pisahkan dengan |, contoh: 25|dua puluh lima"></div><div class="full"><div class="info-box">Penilaian isian dilakukan tanpa membedakan huruf besar/kecil dan dapat memakai jawaban alternatif.</div></div></div>`;
- if(type==='true_false')return `<div class="form-grid"><div><label>Jawaban Benar</label><select name="correct_answer"><option value="TRUE" ${d.correct_answer==='TRUE'?'selected':''}>BENAR / TRUE</option><option value="FALSE" ${d.correct_answer==='FALSE'?'selected':''}>SALAH / FALSE</option></select></div></div>`;
- const complex=type==='complex_choice';return `<div class="form-grid"><div class="full"><label>Pilihan Jawaban</label>${['a','b','c','d','e'].map(k=>`<div class="option-edit"><b>${k.toUpperCase()}</b><input name="option_${k}" value="${esc(d['option_'+k]||'')}" placeholder="Teks pilihan ${k.toUpperCase()}"></div>`).join('')}</div><div class="full"><label>${complex?'Kunci Jawaban (bisa lebih dari satu)':'Kunci Jawaban'}</label>${complex?`<div class="check-row">${['A','B','C','D','E'].map(k=>`<label class="check"><input type="checkbox" name="correct_check" value="${k}"> ${k}</label>`).join('')}</div><input name="correct_answers" value="${esc(d.correct_answers||'')}" placeholder="Contoh: A,C,D">`:`<select name="correct_answer"><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option><option value="E">E</option></select>`}</div></div>`;
-}
-async function openForm(sec,id=''){
- const c=configs[sec];let data={};if(id)data=(await api('admin_get',{sheet:c.sheet,id})).item;
- if(sec==='tryout_questions'){
-   $('adminPage').insertAdjacentHTML('beforeend',`<div class="modal-back" id="modal"><div class="modal modal-xl"><div class="row"><div><h2>${id?'Edit':'Tambah'} Soal Tryout</h2><p class="muted small">Satu soal dapat dibuat manual. Gambar dapat menggunakan URL; import Excel mendukung gambar embedded.</p></div><button class="icon-btn" onclick="closeModal()">✕</button></div><form id="adminForm">${questionEditorHtml(data)}<div class="actions"><button class="btn primary">Simpan Soal</button><button type="button" class="btn secondary" onclick="closeModal()">Batal</button></div></form></div></div>`);
-   refreshQuestionEditor(); if(data.question_type==='multiple_choice'&&$('adminForm').elements.correct_answer)$('adminForm').elements.correct_answer.value=data.correct_answer||'A'; if(data.question_type==='complex_choice'){$('adminForm').elements.correct_answers.value=data.correct_answers||''}
-   $('adminForm').onsubmit=async e=>{e.preventDefault();const obj={};new FormData(e.target).forEach((v,k)=>{if(k!=='correct_check')obj[k]=v});const checks=[...e.target.querySelectorAll('[name="correct_check"]:checked')].map(x=>x.value);if(obj.question_type==='complex_choice')obj.correct_answers=checks.join(',')||obj.correct_answers||'';try{await api('admin_save',{sheet:c.sheet,id,data:obj});toast('Soal tersimpan');closeModal();loadAdminTable(sec)}catch(err){toast(err.message)}};return;
- }
- const fields=c.fields.map(([k,l])=>`<div class="${['description','question','address','explanation','content_html'].includes(k)?'full':''}"><label>${l}</label>${k==='question_type'?`<select name="${k}">${typeOptions(data[k]||'multiple_choice')}</select>`:k==='status'?`<select name="${k}"><option value="aktif">aktif</option><option value="draft">draft</option><option value="nonaktif">nonaktif</option></select>`:k==='description'||k==='content_html'?`<textarea name="${k}">${esc(data[k]||'')}</textarea>`:`<input name="${k}" ${k==='password'?'type="password"':''} value="${esc(data[k]||'')}">`}</div>`).join('');
- $('adminPage').insertAdjacentHTML('beforeend',`<div class="modal-back" id="modal"><div class="modal"><div class="row"><h2>${id?'Edit':'Tambah'} ${c.title}</h2><button class="icon-btn" onclick="closeModal()">✕</button></div><form id="adminForm"><div class="form-grid">${fields}</div><div class="actions" style="margin-top:15px"><button class="btn primary">Simpan</button><button type="button" class="btn secondary" onclick="closeModal()">Batal</button></div></form></div></div>`);
- if(data.question_type)$('adminForm').elements.question_type.value=data.question_type;if(data.status)$('adminForm').elements.status.value=data.status;$('adminForm').onsubmit=async e=>{e.preventDefault();const obj={};new FormData(e.target).forEach((v,k)=>obj[k]=v);try{await api('admin_save',{sheet:c.sheet,id,data:obj});toast('Data tersimpan');closeModal();loadAdminTable(sec)}catch(err){toast(err.message)}};
-}
-
-async function openExcelImport(){
- const tries=await api('admin_list',{sheet:'TRYOUTS'});const options=tries.items.map(t=>`<option value="${esc(t.id)}">${esc(t.title)} — ${esc(t.id)}</option>`).join('');
- $('adminPage').insertAdjacentHTML('beforeend',`<div class="modal-back" id="modal"><div class="modal modal-xl"><div class="row"><div><h2>📥 Import Soal dari Excel</h2><p class="muted">Mendukung teks, pilihan A-E, 4 jenis soal, dan gambar yang ditempel/embedded di file .xlsx.</p></div><button class="icon-btn" onclick="closeModal()">✕</button></div><div class="info-box"><b>Tips:</b> buat kolom <code>No, Jenis, Pertanyaan, A, B, C, D, E, Jawaban, Bobot, Pembahasan</code>. Gambar yang ditempel di baris soal akan ikut dicoba diimpor. Untuk gambar pilihan, tempel gambar pada kolom A Image/B Image/C Image/D Image/E Image.</div><div class="form-grid"><div><label>Masukkan ke Tryout</label><select id="importTryout">${options}</select></div><div><label>File Excel (.xlsx)</label><input id="excelFile" type="file" accept=".xlsx" required></div></div><div id="importPreview" class="import-preview"></div><div class="actions"><button class="btn primary" onclick="processExcelImport()">Baca & Preview</button><button class="btn secondary" onclick="closeModal()">Batal</button></div></div></div>`);
-}
-async function processExcelImport(){
- const file=$('excelFile').files[0];if(!file){toast('Pilih file Excel terlebih dahulu.');return}if(file.size>10*1024*1024){toast('File Excel maksimal 10 MB untuk sekali impor.');return}
- try{const rows=await parseExcelWithImages(file);window.__importRows=rows;const p=$('importPreview');p.innerHTML=`<div class="row"><b>${rows.length} baris terbaca</b><span class="muted">${rows.filter(x=>x.image_base64).length} gambar soal terdeteksi</span></div><div class="table-wrap"><table><tr><th>No</th><th>Jenis</th><th>Pertanyaan</th><th>Gambar</th><th>Kunci</th></tr>${rows.slice(0,30).map((x,i)=>`<tr><td>${esc(x.number||i+1)}</td><td>${esc(x.question_type)}</td><td>${esc(String(x.question||'').slice(0,100))}</td><td>${x.image_base64?'🖼️ Ya':'—'}</td><td>${esc(x.correct_answer||x.correct_answers||'')}</td></tr>`).join('')}</table></div><div class="actions"><button class="btn primary" onclick="sendImportedRows()">🚀 Impor ${rows.length} Soal</button></div>`}catch(e){toast('Excel gagal dibaca: '+e.message)}
-}
-async function sendImportedRows(){const rows=window.__importRows||[];if(!rows.length)return;const tryout_id=$('importTryout').value;try{toast('Mengimpor soal dan gambar...');const r=await api('admin_import_questions',{tryout_id,items:rows});const msg=`Berhasil ${r.imported} soal. ${r.errors.length?r.errors.length+' baris ditolak. ':''}Status: ${r.readiness.status}`;toast(msg);closeModal();loadAdminTable('tryout_questions');}catch(e){toast(e.message)}}
-
-async function parseExcelWithImages(file){
- const zip=await JSZip.loadAsync(file);const xml=async p=>zip.file(p)?await zip.file(p).async('text'):'';const sheet=await xml('xl/worksheets/sheet1.xml');if(!sheet)throw new Error('Sheet pertama tidak ditemukan.');
- const sharedText=await xml('xl/sharedStrings.xml');const shared=[];if(sharedText){const d=new DOMParser().parseFromString(sharedText,'application/xml');[...d.getElementsByTagName('si')].forEach(si=>shared.push([...si.getElementsByTagName('t')].map(x=>x.textContent).join('')))}
- const sd=new DOMParser().parseFromString(sheet,'application/xml');const rows=[...sd.getElementsByTagName('row')];const cellVal=cell=>{const t=cell.getAttribute('t');const vs=cell.getElementsByTagName('v')[0];if(t==='s')return shared[Number(vs?.textContent||0)]||'';if(t==='inlineStr')return [...cell.getElementsByTagName('t')].map(x=>x.textContent).join('');return vs?.textContent||''};
- const matrix=rows.map(r=>{const o={};[...r.getElementsByTagName('c')].forEach(c=>{const ref=c.getAttribute('r')||'';const m=ref.match(/^([A-Z]+)\d+$/);if(m)o[m[1]]=cellVal(c)});return o});if(matrix.length<2)throw new Error('Sheet kosong.');
- const headers=Object.keys(matrix[0]).reduce((a,k)=>{a[k]=String(matrix[0][k]).trim().toLowerCase();return a},{});const norm=s=>String(s||'').trim().toLowerCase().replace(/[\s-]+/g,'_');const h={};Object.entries(headers).forEach(([col,name])=>h[norm(name)]=col);
- const get=(row,names)=>{for(const n of names){const c=h[norm(n)];if(c&&row[c]!=null)return row[c]}return ''};
- const out=matrix.slice(1).map((r,i)=>({number:get(r,['no','nomor'])||i+1,question_type:get(r,['jenis','type','question_type'])||'PG',question:get(r,['pertanyaan','question']),option_a:get(r,['a','option_a']),option_b:get(r,['b','option_b']),option_c:get(r,['c','option_c']),option_d:get(r,['d','option_d']),option_e:get(r,['e','option_e']),correct_answer:get(r,['jawaban','correct_answer']),correct_answers:get(r,['correct_answers','jawaban_benar']),points:get(r,['bobot','points'])||1,explanation:get(r,['pembahasan','explanation'])})).filter(x=>x.question||x.option_a||x.option_b);
- // Embedded images: locate drawing -> image rel -> media and map anchor row/column. Works with common Excel twoCellAnchor/oneCellAnchor files.
- const drawingPath=await findDrawingPath(zip);if(drawingPath){const drawing=await xml(drawingPath);const relPath=drawingPath.replace(/[^/]+$/,'_rels/'+drawingPath.split('/').pop()+'.rels');const relXml=await xml(relPath);const relDoc=new DOMParser().parseFromString(relXml||'<r/>','application/xml');const rels={};[...relDoc.getElementsByTagName('Relationship')].forEach(x=>rels[x.getAttribute('Id')]=x.getAttribute('Target'));
-   const dd=new DOMParser().parseFromString(drawing,'application/xml');const anchors=[...dd.getElementsByTagName('twoCellAnchor'),...dd.getElementsByTagName('oneCellAnchor')];for(const a of anchors){const fr=a.getElementsByTagName('from')[0];const row=Number(fr?.getElementsByTagName('row')[0]?.textContent||0);const col=Number(fr?.getElementsByTagName('col')[0]?.textContent||0);const blip=a.getElementsByTagName('blip')[0];const rid=blip?.getAttribute('r:embed')||blip?.getAttribute('embed');const target=rels[rid];if(row<1||row>=matrix.length||!target)continue;const path=resolveZipPath(drawingPath,target);const entry=zip.file(path);if(!entry)continue;const bytes=await entry.async('base64');const ext=(path.split('.').pop()||'png').toLowerCase();const mime=ext==='jpg'||ext==='jpeg'?'image/jpeg':ext==='gif'?'image/gif':ext==='webp'?'image/webp':'image/png';const data=`data:${mime};base64,${bytes}`;const item=out[row-1];if(!item)continue;const headerName=Object.values(headers)[col]||'';const hn=norm(headerName);if(hn.includes('a_image')||hn==='gambar_a')item.image_a_base64=data,item.image_a_name=`excel-r${row+1}-a.${ext}`;else if(hn.includes('b_image')||hn==='gambar_b')item.image_b_base64=data,item.image_b_name=`excel-r${row+1}-b.${ext}`;else if(hn.includes('c_image')||hn==='gambar_c')item.image_c_base64=data,item.image_c_name=`excel-r${row+1}-c.${ext}`;else if(hn.includes('d_image')||hn==='gambar_d')item.image_d_base64=data,item.image_d_name=`excel-r${row+1}-d.${ext}`;else if(hn.includes('e_image')||hn==='gambar_e')item.image_e_base64=data,item.image_e_name=`excel-r${row+1}-e.${ext}`;else if(!item.image_base64)item.image_base64=data,item.image_name=`excel-r${row+1}-soal.${ext}`;}}
- return out;
-}
-async function findDrawingPath(zip){const ws=zip.file('xl/worksheets/_rels/sheet1.xml.rels');if(!ws)return '';const x=new DOMParser().parseFromString(await ws.async('text'),'application/xml');const rs=[...x.getElementsByTagName('Relationship')].find(r=>String(r.getAttribute('Type')||'').toLowerCase().includes('/drawing'));if(!rs)return '';return resolveZipPath('xl/worksheets/sheet1.xml',rs.getAttribute('Target'));}
-function resolveZipPath(base,target){if(target.startsWith('/'))return target.slice(1);const parts=base.split('/');parts.pop();for(const p of target.split('/')){if(!p||p==='.')continue;if(p==='..')parts.pop();else parts.push(p)}return parts.join('/')}
-
-/* V2 student assessment renderer: responsive + option images + autosave */
-function assessmentUI(page,items,title,action,id,duration,meta={}){
- let idx=0,ans={};let remaining=meta.attempt?.remaining_seconds??(Number(duration||0)*60);const attemptId=meta.attempt?.id||'';const allowBack=meta.tryout?.allow_back!==false;clearInterval(assessmentTimer);
- $(page).innerHTML=`<div class="card" id="assessment"><div class="assessment-head"><div><h2>${esc(title)}</h2><span id="qcounter"></span></div><div class="timer" id="timer">${fmtTime2(remaining)}</div></div><div id="questionBox"></div><div class="actions"><button id="prevBtn" class="btn secondary">← Sebelumnya</button><button id="nextBtn" class="btn primary">Lanjut →</button></div><div id="navigator" class="qnav"></div></div>`;
- function fmtTime2(s){s=Math.max(0,Number(s)||0);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
- function optionHtml(o,checked,multiple){return `<label class="answer"><input type="${multiple?'checkbox':'radio'}" name="answer" value="${esc(o.id)}" ${checked?'checked':''}><span><b>${esc(o.id)}.</b> ${esc(o.text||'')}${o.image_url?`<img class="option-image" src="${esc(o.image_url)}" alt="Gambar pilihan ${esc(o.id)}">`:''}</span></label>`}
- async function autosave(q){if(action!=='tryout'||!attemptId)return;try{await api('save_tryout_answer',{attempt_id:attemptId,question_id:q.id,answer:ans[q.id]??''})}catch(e){toast('Jawaban belum tersimpan: '+e.message)}}
- function draw(){const q=items[idx];$('qcounter').textContent=`Soal ${idx+1} dari ${items.length}`;let body='';if(q.type==='multiple_choice')body=q.options.map(o=>optionHtml(o,ans[q.id]===o.id,false)).join('');else if(q.type==='complex_choice'){const selected=Array.isArray(ans[q.id])?ans[q.id]:String(ans[q.id]||'').split(',').filter(Boolean);body=q.options.map(o=>optionHtml(o,selected.includes(o.id),true)).join('')}else if(q.type==='true_false')body=['true','false'].map(v=>`<label class="answer"><input type="radio" name="answer" value="${v}" ${String(ans[q.id]).toLowerCase()===v?'checked':''}><span>${v==='true'?'Benar':'Salah'}</span></label>`).join('');else body=`<input class="short-answer" id="shortAnswer" value="${esc(ans[q.id]||'')}" placeholder="Ketik jawaban Anda...">`;$('questionBox').innerHTML=`<div class="question"><div class="type-badge">${typeLabel2(q.type)} • ${q.points} poin</div><h3>${esc(q.question)}</h3>${q.image_url?`<img class="question-image" src="${esc(q.image_url)}" alt="Gambar soal">`:''}<div>${body}</div></div>`;$('prevBtn').disabled=idx===0||!allowBack;$('nextBtn').textContent=idx===items.length-1?'Kumpulkan':'Lanjut →';document.querySelectorAll('#navigator button').forEach((b,i)=>b.classList.toggle('current',i===idx))}
- function typeLabel2(t){return({multiple_choice:'Pilihan Ganda',complex_choice:'Pilihan Ganda Kompleks',short_answer:'Isian',true_false:'Benar / Salah'})[t]||t}
- function save(){const q=items[idx];if(q.type==='complex_choice')ans[q.id]=[...document.querySelectorAll('input[name=answer]:checked')].map(x=>x.value);else if(q.type==='short_answer')ans[q.id]=$('shortAnswer')?.value||'';else ans[q.id]=document.querySelector('input[name=answer]:checked')?.value||'';autosave(q)}
- async function submit(){save();try{let r;if(action==='tryout')r=await api('submit_tryout',{tryout_id:id,attempt_id:attemptId,answers:ans});else r=await api('submit_quiz',{quiz_id:id,answers:ans});clearInterval(assessmentTimer);$('assessment').innerHTML=`<div class="result"><h2>🎉 Selesai</h2><div class="big-score">${r.score}</div><p>Benar ${r.correct} • Salah ${r.wrong??(r.total-r.correct)} • Kosong ${r.blank??0} • Total ${r.total}</p></div>`}catch(e){toast(e.message)}}
- $('prevBtn').onclick=()=>{save();if(idx>0){idx--;draw()}};$('nextBtn').onclick=()=>{save();if(idx<items.length-1){idx++;draw()}else submit()};$('navigator').innerHTML=items.map((_,i)=>`<button type="button" onclick="window.__goto(${i})">${i+1}</button>`).join('');window.__goto=i=>{save();idx=i;draw()};draw();if(action==='tryout'){assessmentTimer=setInterval(()=>{remaining--;$('timer').textContent=fmtTime2(remaining);if(remaining<=0){clearInterval(assessmentTimer);submit()}},1000)}
-}
+  function hideAlert() {
+    if (loginAlert) {
+      loginAlert.classList.add("hidden");
+    }
+  }
+});
