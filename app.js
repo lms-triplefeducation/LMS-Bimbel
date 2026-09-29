@@ -1,153 +1,216 @@
-// API URL dibaca dari config.js. Jangan menaruh password/API secret di frontend.
+// ======================================================
+// LMS BIMBEL - CONFIG & HELPER
+// ======================================================
+
 const API_URL = window.LMS_CONFIG?.API_URL || '';
-// ===============================
-// LMS CORE HELPER
-// ===============================
 
 const $ = id => document.getElementById(id);
 
 let state = {
-  token: localStorage.getItem('LMS_TOKEN') || '',
-  user: null
+    token: localStorage.getItem('LMS_TOKEN') || '',
+    user: null
 };
 
 function toast(message) {
-  const el = $('toast');
-  if (!el) {
-    alert(message);
-    return;
-  }
+    const el = $('toast');
 
-  el.textContent = message || '';
-  el.classList.add('show');
+    if (!el) {
+        alert(message);
+        return;
+    }
 
-  clearTimeout(window.__toastTimer);
-  window.__toastTimer = setTimeout(() => {
-    el.classList.remove('show');
-  }, 3500);
+    el.textContent = message || '';
+    el.classList.add('show');
+
+    clearTimeout(window.__toastTimer);
+
+    window.__toastTimer = setTimeout(() => {
+        el.classList.remove('show');
+    }, 3500);
 }
 
 function esc(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 function money(value) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0
-  }).format(Number(value || 0));
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0
+    }).format(Number(value || 0));
 }
 
-// ===============================
-// API GOOGLE APPS SCRIPT
-// ===============================
+
+// ======================================================
+// API
+// ======================================================
 
 async function api(action, data = {}) {
 
-  if (!API_URL) {
-    throw new Error(
-      'API URL belum tersedia. Periksa file config.js.'
-    );
-  }
+    if (!API_URL) {
+        throw new Error(
+            'API URL belum tersedia. Periksa file config.js.'
+        );
+    }
 
-  const payload = {
-    action: action,
-    ...data
-  };
+    const payload = {
+        action: action,
+        ...data
+    };
 
-  if (state.token) {
-    payload.token = state.token;
-  }
+    if (state.token) {
+        payload.token = state.token;
+    }
 
-  let response;
-
-  try {
-
-    response = await fetch(API_URL, {
-      method: 'POST',
-
-      // text/plain dipakai agar request ke Google Apps Script
-      // tidak memicu CORS preflight application/json
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8'
-      },
-
-      body: JSON.stringify(payload)
-    });
-
-  } catch (error) {
-
-    throw new Error(
-      'Tidak dapat terhubung ke server LMS. Periksa koneksi internet dan URL Apps Script.'
-    );
-  }
-
-  const raw = await response.text();
-
-  let result;
-
-  try {
-    result = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(
-      'Server LMS mengirim respons yang tidak valid: ' +
-      raw.substring(0, 300)
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      result.message ||
-      `Server error ${response.status}`
-    );
-  }
-
-  if (result.ok === false) {
-    throw new Error(
-      result.message ||
-      'Permintaan ke server gagal.'
-    );
-  }
-
-  return result;
-}
-$('loginForm').onsubmit = async e => {
-    e.preventDefault();
-
-    alert('1. Tombol login terdeteksi');
+    let response;
 
     try {
+
+        response = await fetch(API_URL, {
+            method: 'POST',
+
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+
+            body: JSON.stringify(payload)
+        });
+
+    } catch (error) {
+
+        throw new Error(
+            'Tidak dapat terhubung ke server LMS. Periksa koneksi internet dan URL Apps Script.'
+        );
+
+    }
+
+    const raw = await response.text();
+
+    let result;
+
+    try {
+
+        result = JSON.parse(raw);
+
+    } catch (error) {
+
+        throw new Error(
+            'Server LMS mengirim respons yang tidak valid: ' +
+            raw.substring(0, 300)
+        );
+
+    }
+
+    if (!response.ok) {
+
+        throw new Error(
+            result.message ||
+            `Server error ${response.status}`
+        );
+
+    }
+
+    if (result.ok === false) {
+
+        throw new Error(
+            result.message ||
+            'Permintaan ke server gagal.'
+        );
+
+    }
+
+    return result;
+}
+
+
+// ======================================================
+// LOGIN
+// ======================================================
+
+$('loginForm').onsubmit = async function(e) {
+
+    e.preventDefault();
+
+    try {
+
         const username = $('loginUser').value.trim();
         const password = $('loginPass').value;
 
-        alert('2. Username: ' + username);
+        if (!username) {
+            toast('Username belum diisi.');
+            return;
+        }
+
+        if (!password) {
+            toast('Password belum diisi.');
+            return;
+        }
+
+        toast('Sedang login...');
 
         const r = await api('login', {
             username: username,
             password: password
         });
 
-        alert('3. Server berhasil: ' + JSON.stringify(r));
+        console.log('LOGIN RESPONSE:', r);
+
+        if (!r.token || !r.user) {
+            throw new Error(
+                'Login berhasil tetapi data akun tidak lengkap.'
+            );
+        }
 
         state.token = r.token;
         state.user = r.user;
 
-        localStorage.setItem('LMS_TOKEN', state.token);
-
-        alert('4. Akan masuk dashboard');
+        localStorage.setItem(
+            'LMS_TOKEN',
+            state.token
+        );
 
         showApp();
 
-    } catch (x) {
-        alert('ERROR LOGIN:\n' + (x.message || x));
-        console.error(x);
+    } catch (error) {
+
+        console.error('LOGIN ERROR:', error);
+
+        toast(
+            error.message ||
+            'Login gagal.'
+        );
+
     }
+
+};
+
+
+// ======================================================
+// LOGOUT
+// ======================================================
+
+function logout(){
+
+    state = {
+        token: '',
+        user: null
+    };
+
+    localStorage.removeItem('LMS_TOKEN');
+
+    $('appView').classList.add('hidden');
+
+    $('loginView').classList.remove('hidden');
+
+    $('logoutBtn').classList.add('hidden');
+
+}
 function logout(){state={token:'',user:null};localStorage.removeItem('LMS_TOKEN');$('appView').classList.add('hidden');$('loginView').classList.remove('hidden');$('logoutBtn').classList.add('hidden')};function showApp(){if(!state.user){$('loginView').classList.remove('hidden');return}$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');setupShell();setPage('dashboard')};function setupShell(){$('welcomeName').textContent='Halo, '+state.user.name;$('welcomeRole').textContent='Peran: '+state.user.role;$('studentBadge').textContent=state.user.student_code||state.user.username;document.querySelectorAll('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));document.querySelectorAll('.teacher-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='guru'));document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>setPage(x.dataset.page))}function setPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));$(p+'Page').classList.remove('hidden');document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.page===p));({dashboard:loadDashboard,meetings:loadMeetings,quiz:loadQuizzes,tryout:loadTryouts,billing:loadBilling,report:loadReport,teacher:loadTeacher,admin:loadAdmin}[p]||loadDashboard)()}
 async function loadDashboard(){try{const r=await api('dashboard');let cards=[];if(state.user.role==='admin')cards=[['👨‍🎓','Siswa',r.stats.students],['👨‍🏫','Guru',r.stats.teachers],['🏫','Kelas',r.stats.classes],['📅','Pertemuan',r.stats.meetings],['🎯','Tryout',r.stats.tryouts],['💰','Tagihan',money(r.stats.unpaid)]];else if(state.user.role==='guru')cards=[['🏫','Kelas saya',r.stats.classes],['👨‍🎓','Siswa',r.stats.students],['📅','Pertemuan',r.stats.meetings],['📌','Pertemuan hari ini',r.stats.today_meetings],['✅','Data absensi',r.stats.attendance],['📝','Kuis',r.stats.quizzes]];else cards=[['📅','Pertemuan',r.stats.meetings],['📝','Kuis selesai',r.stats.quiz_done],['🎯','Tryout selesai',r.stats.tryout_done],['✅','Catatan absensi',r.stats.attendance],['💰','Tagihan',money(r.stats.unpaid)]];$('dashboardPage').innerHTML=`<div class="grid cards">${cards.map(x=>`<div class="card stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('')}</div><div class="card"><h2>${state.user.role==='admin'?'Dashboard Admin':state.user.role==='guru'?'Dashboard Guru':'Dashboard Siswa'}</h2><p>${esc(r.message)}</p></div>`}catch(e){toast(e.message)}}
 async function loadMeetings(){try{const r=await api('meetings');$('meetingsPage').innerHTML=`<div class="card"><h2>Pertemuan</h2>${r.items.map(x=>`<div class="item"><b>${esc(x.title)}</b><div>${esc(x.date)} • ${esc(x.subject)}</div><p>${esc(x.description)}</p>${x.material_url?`<a href="${esc(x.material_url)}" target="_blank">Buka materi</a>`:''}</div>`).join('')||'<p>Belum ada pertemuan.</p>'}</div>`}catch(e){toast(e.message)}}
