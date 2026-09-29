@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LMS Bimbel</title><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="toast" class="toast"></div>
+<header class="topbar"><div class="brand">🎓 LMS Bimbel</div><button id="logoutBtn" class="btn danger hidden" onclick="logout()">Keluar</button></header>
+<main>
+<section id="loginView" class="auth-card">
+<h1>Login LMS Bimbel</h1><p class="muted">Kelola pembelajaran tanpa membuka Google Sheets.</p>
+<form id="loginForm"><label>Username / Email</label><input id="loginUser" required>
+<label>Password</label><input id="loginPass" type="password" required>
+<button class="btn primary" type="submit">Masuk</button></form>
+<div class="demo-box">Admin awal: <b>admin</b> / <b>admin123</b></div>
+</section>
+<section id="appView" class="hidden"><div class="container">
+<div class="welcome"><div><h1 id="welcomeName">Dashboard</h1><p id="welcomeRole" class="muted"></p></div><div id="studentBadge" class="badge"></div></div>
+<nav class="tabs">
+<button class="tab active" data-page="dashboard">Dashboard</button>
+<button class="tab" data-page="meetings">Pertemuan</button><button class="tab" data-page="quiz">Kuis</button>
+<button class="tab" data-page="tryout">Tryout</button><button class="tab" data-page="billing">Tagihan</button>
+<button class="tab" data-page="report">Laporan</button><button class="tab teacher-only hidden" data-page="teacher">👨‍🏫 Guru</button><button class="tab admin-only hidden" data-page="admin">⚙️ Admin</button>
+</nav>
+<section id="dashboardPage" class="page"></section><section id="meetingsPage" class="page hidden"></section>
+<section id="quizPage" class="page hidden"></section><section id="tryoutPage" class="page hidden"></section>
+<section id="billingPage" class="page hidden"></section><section id="reportPage" class="page hidden"></section>
+<section id="teacherPage" class="page hidden"></section><section id="adminPage" class="page hidden"></section>
+</div></section></main>
+<script src="config.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><script src="app.js"></script>
+</body></html>
