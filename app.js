@@ -1,8 +1,124 @@
 // API URL dibaca dari config.js. Jangan menaruh password/API secret di frontend.
 const API_URL = window.LMS_CONFIG?.API_URL || '';
+// ===============================
+// LMS CORE HELPER
+// ===============================
+
+const $ = id => document.getElementById(id);
+
+let state = {
+  token: localStorage.getItem('LMS_TOKEN') || '',
+  user: null
+};
+
+function toast(message) {
+  const el = $('toast');
+  if (!el) {
+    alert(message);
+    return;
+  }
+
+  el.textContent = message || '';
+  el.classList.add('show');
+
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => {
+    el.classList.remove('show');
+  }, 3500);
+}
+
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function money(value) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0
+  }).format(Number(value || 0));
+}
+
+// ===============================
+// API GOOGLE APPS SCRIPT
+// ===============================
+
+async function api(action, data = {}) {
+
+  if (!API_URL) {
+    throw new Error(
+      'API URL belum tersedia. Periksa file config.js.'
+    );
+  }
+
+  const payload = {
+    action: action,
+    ...data
+  };
+
+  if (state.token) {
+    payload.token = state.token;
+  }
+
+  let response;
+
+  try {
+
+    response = await fetch(API_URL, {
+      method: 'POST',
+
+      // text/plain dipakai agar request ke Google Apps Script
+      // tidak memicu CORS preflight application/json
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+
+      body: JSON.stringify(payload)
+    });
+
+  } catch (error) {
+
+    throw new Error(
+      'Tidak dapat terhubung ke server LMS. Periksa koneksi internet dan URL Apps Script.'
+    );
+  }
+
+  const raw = await response.text();
+
+  let result;
+
+  try {
+    result = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      'Server LMS mengirim respons yang tidak valid: ' +
+      raw.substring(0, 300)
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      result.message ||
+      `Server error ${response.status}`
+    );
+  }
+
+  if (result.ok === false) {
+    throw new Error(
+      result.message ||
+      'Permintaan ke server gagal.'
+    );
+  }
+
+  return result;
+}
 $('loginForm').onsubmit=async e=>{e.preventDefault();try{const r=await api('login',{username:$('loginUser').value,password:$('loginPass').value});state.token=r.token;state.user=r.user;localStorage.setItem('LMS_TOKEN',state.token);showApp();}catch(x){toast(x.message)}};function logout(){state={token:'',user:null};localStorage.removeItem('LMS_TOKEN');$('appView').classList.add('hidden');$('loginView').classList.remove('hidden');$('logoutBtn').classList.add('hidden')};function showApp(){if(!state.user){$('loginView').classList.remove('hidden');return}$('loginView').classList.add('hidden');$('appView').classList.remove('hidden');$('logoutBtn').classList.remove('hidden');setupShell();setPage('dashboard')};function setupShell(){$('welcomeName').textContent='Halo, '+state.user.name;$('welcomeRole').textContent='Peran: '+state.user.role;$('studentBadge').textContent=state.user.student_code||state.user.username;document.querySelectorAll('.admin-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='admin'));document.querySelectorAll('.teacher-only').forEach(x=>x.classList.toggle('hidden',state.user.role!=='guru'));document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>setPage(x.dataset.page))}function setPage(p){document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));$(p+'Page').classList.remove('hidden');document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.page===p));({dashboard:loadDashboard,meetings:loadMeetings,quiz:loadQuizzes,tryout:loadTryouts,billing:loadBilling,report:loadReport,teacher:loadTeacher,admin:loadAdmin}[p]||loadDashboard)()}
 async function loadDashboard(){try{const r=await api('dashboard');let cards=[];if(state.user.role==='admin')cards=[['👨‍🎓','Siswa',r.stats.students],['👨‍🏫','Guru',r.stats.teachers],['🏫','Kelas',r.stats.classes],['📅','Pertemuan',r.stats.meetings],['🎯','Tryout',r.stats.tryouts],['💰','Tagihan',money(r.stats.unpaid)]];else if(state.user.role==='guru')cards=[['🏫','Kelas saya',r.stats.classes],['👨‍🎓','Siswa',r.stats.students],['📅','Pertemuan',r.stats.meetings],['📌','Pertemuan hari ini',r.stats.today_meetings],['✅','Data absensi',r.stats.attendance],['📝','Kuis',r.stats.quizzes]];else cards=[['📅','Pertemuan',r.stats.meetings],['📝','Kuis selesai',r.stats.quiz_done],['🎯','Tryout selesai',r.stats.tryout_done],['✅','Catatan absensi',r.stats.attendance],['💰','Tagihan',money(r.stats.unpaid)]];$('dashboardPage').innerHTML=`<div class="grid cards">${cards.map(x=>`<div class="card stat"><div>${x[0]}</div><b>${x[2]}</b><span>${x[1]}</span></div>`).join('')}</div><div class="card"><h2>${state.user.role==='admin'?'Dashboard Admin':state.user.role==='guru'?'Dashboard Guru':'Dashboard Siswa'}</h2><p>${esc(r.message)}</p></div>`}catch(e){toast(e.message)}}
-
 async function loadMeetings(){try{const r=await api('meetings');$('meetingsPage').innerHTML=`<div class="card"><h2>Pertemuan</h2>${r.items.map(x=>`<div class="item"><b>${esc(x.title)}</b><div>${esc(x.date)} • ${esc(x.subject)}</div><p>${esc(x.description)}</p>${x.material_url?`<a href="${esc(x.material_url)}" target="_blank">Buka materi</a>`:''}</div>`).join('')||'<p>Belum ada pertemuan.</p>'}</div>`}catch(e){toast(e.message)}}
 async function loadQuizzes(){try{const r=await api('quizzes');$('quizPage').innerHTML=`<div class="card"><h2>Kuis</h2>${r.items.map(x=>`<div class="item"><b>${esc(x.title)}</b><p>${esc(x.description||'')} • ${x.duration_minutes||0} menit</p><button class="btn primary" onclick="startQuiz('${x.id}')">Mulai</button></div>`).join('')||'<p>Belum ada kuis.</p>'}</div>`}catch(e){toast(e.message)}}async function startQuiz(id){const r=await api('quiz_detail',{quiz_id:id});assessmentUI('quizPage',r.questions,r.quiz.title,'submit_quiz',id,r.quiz.duration_minutes||0)}
 async function loadTryouts(){try{const r=await api('tryouts');$('tryoutPage').innerHTML=`<div class="card"><h2>Tryout</h2><p class="muted">Tryout memiliki timer dan mendukung pilihan ganda, pilihan ganda kompleks, isian, serta benar/salah.</p>${r.items.map(x=>`<div class="item"><b>${esc(x.title)}</b><p>${esc(x.description||'')}</p><small>${x.question_count} soal • ${x.duration_minutes} menit • ${esc(x.date||'')}</small><br><button class="btn primary" onclick="startTryout('${x.id}')">Mulai Tryout</button></div>`).join('')||'<p>Belum ada tryout.</p>'}</div>`}catch(e){toast(e.message)}}
