@@ -1,1 +1,1 @@
-window.LMS_CONFIG = { API_URL: 'https://script.google.com/macros/s/AKfycbwd-8KgesSn_1tCOIO1eE-Th11zgUIdHAtFlvXNuAlhPv61mUmpECqKcAS2YaN7C2MX/exec' };
+window.LMS_CONFIG = { API_URL: 'https://script.google.com/macros/s/AKfycbxm3UJrB02n9PaJ41qNrVx5waiU20oPbn6XBDW9bhRjwPnN0NVDM8LDNb7hFif-ryFi/exec' };
