@@ -1,0 +1,1 @@
+export function calculateQuizScore(correct,total){return total?Math.round(correct/total*10000)/100:0}

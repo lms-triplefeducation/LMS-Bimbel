@@ -1,0 +1,3 @@
+import {CONFIG} from './config.js';
+export function buildWhatsAppLink(phone,text){let p=String(phone||'').replace(/\D/g,'');if(p.startsWith('0'))p=CONFIG.WHATSAPP_COUNTRY+p.slice(1);if(!p.startsWith(CONFIG.WHATSAPP_COUNTRY))p=CONFIG.WHATSAPP_COUNTRY+p;return `https://wa.me/${p}?text=${encodeURIComponent(text)}`}
+export async function generatePdfReport(html,filename){if(!CONFIG.DRIVE_API_URL||CONFIG.DRIVE_API_URL.includes('PASTE_'))throw Error('URL Google Apps Script belum diisi.');const b64=btoa(unescape(encodeURIComponent(html)));const r=await fetch(CONFIG.DRIVE_API_URL,{method:'POST',body:new URLSearchParams({action:'report_pdf',filename,html_base64:b64})});const j=await r.json();if(!j.ok)throw Error(j.error||'Gagal membuat PDF');return j}

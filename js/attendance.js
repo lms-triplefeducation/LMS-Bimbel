@@ -1,0 +1,1 @@
+export const attendanceStatuses=["Hadir","Izin","Sakit","Alpa"];

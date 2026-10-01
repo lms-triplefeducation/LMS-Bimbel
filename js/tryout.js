@@ -1,0 +1,1 @@
+export function calculateTryoutScore(correct,total){return total?Math.round(correct/total*10000)/100:0}export function isExpired(expiresAt){return Date.now()>=new Date(expiresAt).getTime()}

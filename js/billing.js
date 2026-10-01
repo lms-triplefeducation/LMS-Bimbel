@@ -1,0 +1,1 @@
+export const billingStatuses=["Belum Bayar","Menunggu Verifikasi","Lunas","Terlambat"];

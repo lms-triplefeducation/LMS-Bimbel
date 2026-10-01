@@ -1,0 +1,1 @@
+export const teacherModules=["students","materials","attendance","quiz","tryout","drill","reports"];

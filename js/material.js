@@ -1,0 +1,1 @@
+export function materialPayload(data){return{...data,updated_at:new Date().toISOString()}}

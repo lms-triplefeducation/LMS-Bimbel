@@ -1,0 +1,1 @@
+export const studentModules=["home","materials","drill","quiz","tryout","reports","billing","profile"];

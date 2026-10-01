@@ -1,0 +1,1 @@
+export const adminModules=["students","teachers","classes","subjects","packages","meetings","materials","quiz","tryout","drill","billing","reports","monitoring","activity_logs"];
